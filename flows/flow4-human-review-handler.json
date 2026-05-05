@@ -1,0 +1,215 @@
+{
+  "properties": {
+    "displayName": "PA - Human Review Decision Handler",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": { "defaultValue": {}, "type": "Object" },
+        "$authentication": { "defaultValue": {}, "type": "SecureObject" }
+      },
+      "triggers": {
+        "When_Reviewer_Decision_Changes": {
+          "type": "OpenApiConnectionWebhook",
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "SubscribeWebhookTrigger",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "subscriptionRequest/message": 4,
+              "subscriptionRequest/entityname": "clinical_documentsubmission",
+              "subscriptionRequest/scope": 4,
+              "subscriptionRequest/filterexpression": "clinical_reviewerdecision ne null"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        }
+      },
+      "actions": {
+        "Check_Not_Pending": {
+          "type": "If",
+          "runAfter": {},
+          "expression": {
+            "not": {
+              "equals": [
+                "@triggerOutputs()?['body/clinical_reviewerdecision']",
+                100000000
+              ]
+            }
+          },
+          "actions": {
+            "Switch_Reviewer_Decision": {
+              "type": "Switch",
+              "runAfter": {},
+              "expression": "@triggerOutputs()?['body/clinical_reviewerdecision']",
+              "cases": {
+                "Approved": {
+                  "case": 100000001,
+                  "actions": {
+                    "Update_Compliance_Approved": {
+                      "type": "OpenApiConnection",
+                      "runAfter": {},
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_commondataserviceforapps",
+                          "operationId": "UpdateRecord",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                        },
+                        "parameters": {
+                          "entityName": "clinical_documentsubmissions",
+                          "recordId": "@triggerOutputs()?['body/clinical_documentsubmissionid']",
+                          "item/clinical_compliancestatus": 100000000
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Get_Open_Anomalies": {
+                      "type": "OpenApiConnection",
+                      "runAfter": { "Update_Compliance_Approved": ["Succeeded"] },
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_commondataserviceforapps",
+                          "operationId": "ListRecords",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                        },
+                        "parameters": {
+                          "entityName": "clinical_documentanomalies",
+                          "$filter": "@concat('_clinical_documentsubmissionid_value eq ', triggerOutputs()?['body/clinical_documentsubmissionid'], ' and clinical_status eq 100000000 and clinical_isblocking eq false')"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Close_NonBlocking_Anomalies": {
+                      "type": "Foreach",
+                      "runAfter": { "Get_Open_Anomalies": ["Succeeded"] },
+                      "foreach": "@body('Get_Open_Anomalies')?['value']",
+                      "actions": {
+                        "Waive_Anomaly": {
+                          "type": "OpenApiConnection",
+                          "runAfter": {},
+                          "inputs": {
+                            "host": {
+                              "connectionName": "shared_commondataserviceforapps",
+                              "operationId": "UpdateRecord",
+                              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                            },
+                            "parameters": {
+                              "entityName": "clinical_documentanomalies",
+                              "recordId": "@items('Close_NonBlocking_Anomalies')?['clinical_documentanomalyid']",
+                              "item/clinical_status": 100000002,
+                              "item/clinical_resolvedon": "@utcNow()"
+                            },
+                            "authentication": "@parameters('$authentication')"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "Rejected": {
+                  "case": 100000002,
+                  "actions": {
+                    "Update_Compliance_Rejected": {
+                      "type": "OpenApiConnection",
+                      "runAfter": {},
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_commondataserviceforapps",
+                          "operationId": "UpdateRecord",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                        },
+                        "parameters": {
+                          "entityName": "clinical_documentsubmissions",
+                          "recordId": "@triggerOutputs()?['body/clinical_documentsubmissionid']",
+                          "item/clinical_compliancestatus": 100000001
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Create_Rejection_Followup_Task": {
+                      "type": "OpenApiConnection",
+                      "runAfter": { "Update_Compliance_Rejected": ["Succeeded"] },
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_commondataserviceforapps",
+                          "operationId": "CreateRecord",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                        },
+                        "parameters": {
+                          "entityName": "clinical_followuptasks",
+                          "item/clinical_tasktitle": "@concat('Document Rejected by Reviewer: ', triggerOutputs()?['body/clinical_documentname'])",
+                          "item/clinical_emaildraft": "@concat('Dear site team,\n\nThe following document has been reviewed and rejected:\n\n', triggerOutputs()?['body/clinical_documentname'], '\n\nReviewer comments: ', coalesce(triggerOutputs()?['body/clinical_reviewercomments'], 'No additional comments.'), '\n\nPlease resubmit a corrected version.\n\nBest regards,\nStudy Startup Team')",
+                          "item/clinical_tasktype": 100000000,
+                          "item/clinical_status": 100000000,
+                          "item/clinical_numberofreminders": 0,
+                          "item/clinical_documentsubmissionid@odata.bind": "@concat('/clinical_documentsubmissions(', triggerOutputs()?['body/clinical_documentsubmissionid'], ')')"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    }
+                  }
+                },
+                "Override": {
+                  "case": 100000003,
+                  "actions": {
+                    "Update_Compliance_Override": {
+                      "type": "OpenApiConnection",
+                      "runAfter": {},
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_commondataserviceforapps",
+                          "operationId": "UpdateRecord",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                        },
+                        "parameters": {
+                          "entityName": "clinical_documentsubmissions",
+                          "recordId": "@triggerOutputs()?['body/clinical_documentsubmissionid']",
+                          "item/clinical_compliancestatus": 100000000,
+                          "item/clinical_aisummary": "@concat('[OVERRIDE] ', triggerOutputs()?['body/clinical_reviewercomments'])"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Resolve_All_Anomalies_Override": {
+                      "type": "OpenApiConnection",
+                      "runAfter": { "Update_Compliance_Override": ["Succeeded"] },
+                      "inputs": {
+                        "host": {
+                          "connectionName": "shared_commondataserviceforapps",
+                          "operationId": "ListRecords",
+                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                        },
+                        "parameters": {
+                          "entityName": "clinical_documentanomalies",
+                          "$filter": "@concat('_clinical_documentsubmissionid_value eq ', triggerOutputs()?['body/clinical_documentsubmissionid'], ' and clinical_status eq 100000000')"
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    }
+                  }
+                }
+              },
+              "default": { "actions": {} }
+            }
+          },
+          "else": { "actions": {} }
+        }
+      },
+      "outputs": {}
+    },
+    "connectionReferences": {
+      "shared_commondataserviceforapps": {
+        "runtimeSource": "embedded",
+        "connection": {},
+        "api": { "name": "shared_commondataserviceforapps" }
+      },
+      "shared_office365": {
+        "runtimeSource": "invoker",
+        "connection": {},
+        "api": { "name": "shared_office365" }
+      }
+    }
+  }
+}

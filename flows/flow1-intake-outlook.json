@@ -1,0 +1,162 @@
+{
+  "properties": {
+    "displayName": "PA - Intake Outlook Site Documents",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": { "defaultValue": {}, "type": "Object" },
+        "$authentication": { "defaultValue": {}, "type": "SecureObject" }
+      },
+      "triggers": {
+        "When_a_new_email_arrives": {
+          "type": "OpenApiConnection",
+          "inputs": {
+            "host": {
+              "connectionName": "shared_office365",
+              "operationId": "OnNewEmailV3",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+            },
+            "parameters": {
+              "fetchOnlyWithAttachment": true,
+              "includeAttachments": true,
+              "folderPath": "Inbox",
+              "importance": "Any"
+            },
+            "authentication": "@parameters('$authentication')"
+          },
+          "recurrence": { "frequency": "Minute", "interval": 3 },
+          "splitOn": "@triggerOutputs()?['body/value']"
+        }
+      },
+      "actions": {
+        "Create_Email_Intake": {
+          "type": "OpenApiConnection",
+          "runAfter": {},
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "CreateRecord",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "entityName": "clinical_emailintakes",
+              "item/clinical_emailsubject": "@triggerOutputs()?['body/subject']",
+              "item/clinical_senderemail": "@triggerOutputs()?['body/from']",
+              "item/clinical_sendername": "@triggerOutputs()?['body/senderName']",
+              "item/clinical_receivedondatetime": "@triggerOutputs()?['body/receivedDateTime']",
+              "item/clinical_outlookmessageid": "@triggerOutputs()?['body/id']",
+              "item/clinical_bodypreview": "@substring(triggerOutputs()?['body/body'], 0, 2000)",
+              "item/clinical_processingstatus": 100000000,
+              "item/clinical_numberofattachments": "@length(triggerOutputs()?['body/attachments'])"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Apply_to_each_attachment": {
+          "type": "Foreach",
+          "runAfter": { "Create_Email_Intake": ["Succeeded"] },
+          "foreach": "@triggerOutputs()?['body/attachments']",
+          "actions": {
+            "Skip_if_signature_image": {
+              "type": "If",
+              "runAfter": {},
+              "expression": {
+                "and": [
+                  { "greater": [ "@int(items('Apply_to_each_attachment')?['size'])", 20000 ] }
+                ]
+              },
+              "actions": {
+                "Create_Document_Submission": {
+                  "type": "OpenApiConnection",
+                  "runAfter": {},
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_commondataserviceforapps",
+                      "operationId": "CreateRecord",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                    },
+                    "parameters": {
+                      "entityName": "clinical_documentsubmissions",
+                      "item/clinical_documentname": "@items('Apply_to_each_attachment')?['name']",
+                      "item/clinical_originalfilename": "@items('Apply_to_each_attachment')?['name']",
+                      "item/clinical_processingstatus": 100000000,
+                      "item/clinical_emailintakeid@odata.bind": "@concat('/clinical_emailintakes(', outputs('Create_Email_Intake')?['body/clinical_emailintakeid'], ')')"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                },
+                "Get_Attachment_Content": {
+                  "type": "OpenApiConnection",
+                  "runAfter": { "Create_Document_Submission": ["Succeeded"] },
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_office365",
+                      "operationId": "GetAttachment",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+                    },
+                    "parameters": {
+                      "messageId": "@triggerOutputs()?['body/id']",
+                      "attachmentId": "@items('Apply_to_each_attachment')?['id']"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                },
+                "Store_File_in_Document_Submission": {
+                  "type": "OpenApiConnection",
+                  "runAfter": { "Get_Attachment_Content": ["Succeeded"] },
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_commondataserviceforapps",
+                      "operationId": "UploadFile",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                    },
+                    "parameters": {
+                      "entityName": "clinical_documentsubmissions",
+                      "recordId": "@outputs('Create_Document_Submission')?['body/clinical_documentsubmissionid']",
+                      "fileAttributeName": "clinical_file",
+                      "item": "@body('Get_Attachment_Content')?['contentBytes']",
+                      "fileName": "@items('Apply_to_each_attachment')?['name']"
+                    },
+                    "authentication": "@parameters('$authentication')"
+                  }
+                }
+              },
+              "else": { "actions": {} }
+            }
+          }
+        },
+        "Update_Email_Intake_Completed": {
+          "type": "OpenApiConnection",
+          "runAfter": { "Apply_to_each_attachment": ["Succeeded", "Failed"] },
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "UpdateRecord",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "entityName": "clinical_emailintakes",
+              "recordId": "@outputs('Create_Email_Intake')?['body/clinical_emailintakeid']",
+              "item/clinical_processingstatus": 100000002
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        }
+      },
+      "outputs": {}
+    },
+    "connectionReferences": {
+      "shared_office365": {
+        "runtimeSource": "invoker",
+        "connection": {},
+        "api": { "name": "shared_office365" }
+      },
+      "shared_commondataserviceforapps": {
+        "runtimeSource": "embedded",
+        "connection": {},
+        "api": { "name": "shared_commondataserviceforapps" }
+      }
+    }
+  }
+}

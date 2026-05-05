@@ -1,0 +1,397 @@
+{
+  "properties": {
+    "displayName": "PA - AI Document Audit",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": { "defaultValue": {}, "type": "Object" },
+        "$authentication": { "defaultValue": {}, "type": "SecureObject" }
+      },
+      "triggers": {
+        "When_Document_Submission_Created": {
+          "type": "OpenApiConnectionWebhook",
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "SubscribeWebhookTrigger",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "subscriptionRequest/message": 1,
+              "subscriptionRequest/entityname": "clinical_documentsubmission",
+              "subscriptionRequest/scope": 4
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        }
+      },
+      "actions": {
+        "Update_Status_AI_Processing": {
+          "type": "OpenApiConnection",
+          "runAfter": {},
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "UpdateRecord",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "entityName": "clinical_documentsubmissions",
+              "recordId": "@triggerOutputs()?['body/clinical_documentsubmissionid']",
+              "item/clinical_processingstatus": 100000001
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Get_File_Content": {
+          "type": "OpenApiConnection",
+          "runAfter": { "Update_Status_AI_Processing": ["Succeeded"] },
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "DownloadFile",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "entityName": "clinical_documentsubmissions",
+              "recordId": "@triggerOutputs()?['body/clinical_documentsubmissionid']",
+              "fileAttributeName": "clinical_file"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Audit_with_AI_Builder": {
+          "type": "OpenApiConnection",
+          "runAfter": { "Get_File_Content": ["Succeeded"] },
+          "inputs": {
+            "host": {
+              "connectionName": "shared_aibuilder",
+              "operationId": "CreateTextUsingPromptDeprecated",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_aibuilder"
+            },
+            "parameters": {
+              "promptId": "REPLACE_WITH_FAST_TRACK_ONBOARDING_DOCUMENT_AUDIT_PROMPT_ID",
+              "promptParameterValues": [
+                {
+                  "key": "Document input",
+                  "fileContent": "@{base64(body('Get_File_Content'))}",
+                  "fileName": "@{triggerOutputs()?['body/clinical_originalfilename']}"
+                }
+              ]
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Parse_AI_JSON_Output": {
+          "type": "ParseJson",
+          "runAfter": { "Audit_with_AI_Builder": ["Succeeded"] },
+          "inputs": {
+            "content": "@body('Audit_with_AI_Builder')?['text']",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "processing_metadata": {
+                  "type": "object",
+                  "properties": {
+                    "document_language": { "type": "string" },
+                    "detected_document_type": { "type": "string" },
+                    "document_type_confidence": { "type": "number" },
+                    "is_expected_clinical_site_document": { "type": "boolean" },
+                    "requires_human_review": { "type": "boolean" },
+                    "human_review_reason": { "type": "string" }
+                  }
+                },
+                "compliance_assessment": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "confidence_score": { "type": "number" },
+                    "rationale": { "type": "string" },
+                    "blocking_issues_count": { "type": "integer" },
+                    "non_blocking_issues_count": { "type": "integer" }
+                  }
+                },
+                "site_context": {
+                  "type": "object",
+                  "properties": {
+                    "site_name": { "type": "string" },
+                    "site_number": { "type": "string" },
+                    "country": { "type": "string" },
+                    "protocol_number": { "type": "string" },
+                    "sponsor": { "type": "string" }
+                  }
+                },
+                "person_context": {
+                  "type": "object",
+                  "properties": {
+                    "full_name": { "type": "string" },
+                    "role": { "type": "string" },
+                    "email": { "type": "string" },
+                    "license_number": { "type": "string" }
+                  }
+                },
+                "document_details": {
+                  "type": "object",
+                  "properties": {
+                    "document_title": { "type": "string" },
+                    "document_version": { "type": "string" },
+                    "document_date": { "type": "string" },
+                    "effective_date": { "type": "string" },
+                    "expiry_date": { "type": "string" },
+                    "issuing_organization": { "type": "string" },
+                    "signature_present": { "type": "boolean" },
+                    "date_present": { "type": "boolean" },
+                    "page_count": { "type": "integer" }
+                  }
+                },
+                "anomalies": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "anomaly_type": { "type": "string" },
+                      "severity": { "type": "string" },
+                      "field_name": { "type": "string" },
+                      "description": { "type": "string" },
+                      "recommended_action": { "type": "string" },
+                      "is_blocking": { "type": "boolean" }
+                    }
+                  }
+                },
+                "recommended_actions": { "type": "array", "items": { "type": "string" } },
+                "email_response": {
+                  "type": "object",
+                  "properties": {
+                    "should_send_email": { "type": "boolean" },
+                    "email_subject": { "type": "string" },
+                    "email_body": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Map_Compliance_Status": {
+          "type": "Switch",
+          "runAfter": { "Parse_AI_JSON_Output": ["Succeeded"] },
+          "expression": "@body('Parse_AI_JSON_Output')?['compliance_assessment']?['status']",
+          "cases": {
+            "compliant": {
+              "case": "compliant",
+              "actions": {
+                "Set_Compliance_Compliant": {
+                  "type": "SetVariable",
+                  "inputs": { "name": "complianceStatusCode", "value": 100000000 },
+                  "runAfter": {}
+                }
+              }
+            },
+            "non_compliant": {
+              "case": "non_compliant",
+              "actions": {
+                "Set_Compliance_NonCompliant": {
+                  "type": "SetVariable",
+                  "inputs": { "name": "complianceStatusCode", "value": 100000001 },
+                  "runAfter": {}
+                }
+              }
+            },
+            "needs_review": {
+              "case": "needs_review",
+              "actions": {
+                "Set_Compliance_NeedsReview": {
+                  "type": "SetVariable",
+                  "inputs": { "name": "complianceStatusCode", "value": 100000002 },
+                  "runAfter": {}
+                }
+              }
+            }
+          },
+          "default": {
+            "actions": {
+              "Set_Compliance_Unsupported": {
+                "type": "SetVariable",
+                "inputs": { "name": "complianceStatusCode", "value": 100000003 },
+                "runAfter": {}
+              }
+            }
+          }
+        },
+        "Initialize_complianceStatusCode": {
+          "type": "InitializeVariable",
+          "runAfter": {},
+          "inputs": {
+            "variables": [{ "name": "complianceStatusCode", "type": "integer", "value": 100000003 }]
+          }
+        },
+        "Create_AI_Audit_Result": {
+          "type": "OpenApiConnection",
+          "runAfter": { "Map_Compliance_Status": ["Succeeded", "Failed"] },
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "CreateRecord",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "entityName": "clinical_aiauditresults",
+              "item/clinical_name": "@concat('Audit - ', triggerOutputs()?['body/clinical_documentname'])",
+              "item/clinical_auditstatus": "@variables('complianceStatusCode')",
+              "item/clinical_isexpecteddocument": "@body('Parse_AI_JSON_Output')?['processing_metadata']?['is_expected_clinical_site_document']",
+              "item/clinical_confidencescore": "@body('Parse_AI_JSON_Output')?['compliance_assessment']?['confidence_score']",
+              "item/clinical_compliancerationale": "@body('Parse_AI_JSON_Output')?['compliance_assessment']?['rationale']",
+              "item/clinical_extractedpersonname": "@body('Parse_AI_JSON_Output')?['person_context']?['full_name']",
+              "item/clinical_extractedsitename": "@body('Parse_AI_JSON_Output')?['site_context']?['site_name']",
+              "item/clinical_extractedprotocolnumber": "@body('Parse_AI_JSON_Output')?['site_context']?['protocol_number']",
+              "item/clinical_signaturepresent": "@body('Parse_AI_JSON_Output')?['document_details']?['signature_present']",
+              "item/clinical_datepresent": "@body('Parse_AI_JSON_Output')?['document_details']?['date_present']",
+              "item/clinical_language": "@body('Parse_AI_JSON_Output')?['processing_metadata']?['document_language']",
+              "item/clinical_rawaioutput": "@body('Audit_with_AI_Builder')?['text']",
+              "item/clinical_modelused": "GPT-4.1",
+              "item/clinical_documentsubmissionid@odata.bind": "@concat('/clinical_documentsubmissions(', triggerOutputs()?['body/clinical_documentsubmissionid'], ')')"
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Apply_to_each_anomaly": {
+          "type": "Foreach",
+          "runAfter": { "Create_AI_Audit_Result": ["Succeeded"] },
+          "foreach": "@body('Parse_AI_JSON_Output')?['anomalies']",
+          "actions": {
+            "Create_Document_Anomaly": {
+              "type": "OpenApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_commondataserviceforapps",
+                  "operationId": "CreateRecord",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                },
+                "parameters": {
+                  "entityName": "clinical_documentanomalies",
+                  "item/clinical_name": "@concat(items('Apply_to_each_anomaly')?['anomaly_type'], ' - ', triggerOutputs()?['body/clinical_documentname'])",
+                  "item/clinical_fieldname": "@items('Apply_to_each_anomaly')?['field_name']",
+                  "item/clinical_description": "@items('Apply_to_each_anomaly')?['description']",
+                  "item/clinical_recommendedaction": "@items('Apply_to_each_anomaly')?['recommended_action']",
+                  "item/clinical_isblocking": "@items('Apply_to_each_anomaly')?['is_blocking']",
+                  "item/clinical_status": 100000000,
+                  "item/clinical_documentsubmissionid@odata.bind": "@concat('/clinical_documentsubmissions(', triggerOutputs()?['body/clinical_documentsubmissionid'], ')')"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            }
+          }
+        },
+        "Update_Document_Submission_with_Results": {
+          "type": "OpenApiConnection",
+          "runAfter": { "Apply_to_each_anomaly": ["Succeeded", "Failed"] },
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "UpdateRecord",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "entityName": "clinical_documentsubmissions",
+              "recordId": "@triggerOutputs()?['body/clinical_documentsubmissionid']",
+              "item/clinical_compliancestatus": "@variables('complianceStatusCode')",
+              "item/clinical_aiconfidencescore": "@body('Parse_AI_JSON_Output')?['compliance_assessment']?['confidence_score']",
+              "item/clinical_aisummary": "@body('Parse_AI_JSON_Output')?['compliance_assessment']?['rationale']",
+              "item/clinical_missinginformationsummary": "@join(body('Parse_AI_JSON_Output')?['recommended_actions'], '\n')",
+              "item/clinical_extractedjson": "@body('Audit_with_AI_Builder')?['text']",
+              "item/clinical_humanreviewrequired": "@body('Parse_AI_JSON_Output')?['processing_metadata']?['requires_human_review']",
+              "item/clinical_processingstatus": 100000003,
+              "item/clinical_auditcompletedon": "@utcNow()",
+              "item/clinical_reviewerdecision": 100000000
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        },
+        "Check_Blocking_Anomalies": {
+          "type": "If",
+          "runAfter": { "Update_Document_Submission_with_Results": ["Succeeded"] },
+          "expression": {
+            "greater": [
+              "@body('Parse_AI_JSON_Output')?['compliance_assessment']?['blocking_issues_count']",
+              0
+            ]
+          },
+          "actions": {
+            "Create_Followup_Task": {
+              "type": "OpenApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_commondataserviceforapps",
+                  "operationId": "CreateRecord",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                },
+                "parameters": {
+                  "entityName": "clinical_followuptasks",
+                  "item/clinical_tasktitle": "@concat('Non-Compliant Document: ', triggerOutputs()?['body/clinical_documentname'])",
+                  "item/clinical_emaildraft": "@body('Parse_AI_JSON_Output')?['email_response']?['email_body']",
+                  "item/clinical_recipientemail": "@triggerOutputs()?['body/_clinical_emailintakeid_value@OData.Community.Display.V1.FormattedValue']",
+                  "item/clinical_tasktype": 100000000,
+                  "item/clinical_status": 100000000,
+                  "item/clinical_numberofreminders": 0,
+                  "item/clinical_documentsubmissionid@odata.bind": "@concat('/clinical_documentsubmissions(', triggerOutputs()?['body/clinical_documentsubmissionid'], ')')"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            }
+          },
+          "else": { "actions": {} }
+        },
+        "Check_Should_Send_Email": {
+          "type": "If",
+          "runAfter": { "Check_Blocking_Anomalies": ["Succeeded"] },
+          "expression": {
+            "equals": [
+              "@body('Parse_AI_JSON_Output')?['email_response']?['should_send_email']",
+              true
+            ]
+          },
+          "actions": {
+            "Send_Email_to_Site": {
+              "type": "OpenApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_office365",
+                  "operationId": "SendEmailV2",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+                },
+                "parameters": {
+                  "emailMessage/To": "@triggerOutputs()?['body/_clinical_emailintakeid_value@OData.Community.Display.V1.FormattedValue']",
+                  "emailMessage/Subject": "@body('Parse_AI_JSON_Output')?['email_response']?['email_subject']",
+                  "emailMessage/Body": "@replace(body('Parse_AI_JSON_Output')?['email_response']?['email_body'], '\\n', '<br/>')"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            }
+          },
+          "else": { "actions": {} }
+        }
+      },
+      "outputs": {}
+    },
+    "connectionReferences": {
+      "shared_commondataserviceforapps": {
+        "runtimeSource": "embedded",
+        "connection": {},
+        "api": { "name": "shared_commondataserviceforapps" }
+      },
+      "shared_aibuilder": {
+        "runtimeSource": "embedded",
+        "connection": {},
+        "api": { "name": "shared_aibuilder" }
+      },
+      "shared_office365": {
+        "runtimeSource": "invoker",
+        "connection": {},
+        "api": { "name": "shared_office365" }
+      }
+    }
+  }
+}

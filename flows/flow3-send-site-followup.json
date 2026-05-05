@@ -1,0 +1,130 @@
+{
+  "properties": {
+    "displayName": "PA - Send Site Follow-up",
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": { "defaultValue": {}, "type": "Object" },
+        "$authentication": { "defaultValue": {}, "type": "SecureObject" }
+      },
+      "triggers": {
+        "When_FollowupTask_Created": {
+          "type": "OpenApiConnectionWebhook",
+          "inputs": {
+            "host": {
+              "connectionName": "shared_commondataserviceforapps",
+              "operationId": "SubscribeWebhookTrigger",
+              "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+            },
+            "parameters": {
+              "subscriptionRequest/message": 1,
+              "subscriptionRequest/entityname": "clinical_followuptask",
+              "subscriptionRequest/scope": 4
+            },
+            "authentication": "@parameters('$authentication')"
+          }
+        }
+      },
+      "actions": {
+        "Check_Is_Email_Followup": {
+          "type": "If",
+          "runAfter": {},
+          "expression": {
+            "and": [
+              { "equals": [ "@triggerOutputs()?['body/clinical_tasktype']", 100000000 ] },
+              { "equals": [ "@triggerOutputs()?['body/clinical_status']", 100000000 ] }
+            ]
+          },
+          "actions": {
+            "Get_Document_Submission": {
+              "type": "OpenApiConnection",
+              "runAfter": {},
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_commondataserviceforapps",
+                  "operationId": "GetRecord",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                },
+                "parameters": {
+                  "entityName": "clinical_documentsubmissions",
+                  "recordId": "@triggerOutputs()?['body/_clinical_documentsubmissionid_value']",
+                  "$select": "clinical_documentname,clinical_compliancestatus,_clinical_emailintakeid_value"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "Get_Email_Intake": {
+              "type": "OpenApiConnection",
+              "runAfter": { "Get_Document_Submission": ["Succeeded"] },
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_commondataserviceforapps",
+                  "operationId": "GetRecord",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                },
+                "parameters": {
+                  "entityName": "clinical_emailintakes",
+                  "recordId": "@body('Get_Document_Submission')?['_clinical_emailintakeid_value']",
+                  "$select": "clinical_senderemail,clinical_sendername"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "Send_Followup_Email": {
+              "type": "OpenApiConnection",
+              "runAfter": { "Get_Email_Intake": ["Succeeded"] },
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_office365",
+                  "operationId": "SendEmailV2",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365"
+                },
+                "parameters": {
+                  "emailMessage/To": "@{coalesce(triggerOutputs()?['body/clinical_recipientemail'], body('Get_Email_Intake')?['clinical_senderemail'])}",
+                  "emailMessage/Subject": "@concat('Action Required — ', triggerOutputs()?['body/clinical_tasktitle'])",
+                  "emailMessage/Body": "@replace(triggerOutputs()?['body/clinical_emaildraft'], '\\n', '<br/>')",
+                  "emailMessage/Importance": "High"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "Update_Task_Sent": {
+              "type": "OpenApiConnection",
+              "runAfter": { "Send_Followup_Email": ["Succeeded"] },
+              "inputs": {
+                "host": {
+                  "connectionName": "shared_commondataserviceforapps",
+                  "operationId": "UpdateRecord",
+                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                },
+                "parameters": {
+                  "entityName": "clinical_followuptasks",
+                  "recordId": "@triggerOutputs()?['body/clinical_followuptaskid']",
+                  "item/clinical_status": 100000001,
+                  "item/clinical_lastsentrequested": "@utcNow()",
+                  "item/clinical_numberofreminders": "@add(coalesce(triggerOutputs()?['body/clinical_numberofreminders'], 0), 1)"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            }
+          },
+          "else": { "actions": {} }
+        }
+      },
+      "outputs": {}
+    },
+    "connectionReferences": {
+      "shared_commondataserviceforapps": {
+        "runtimeSource": "embedded",
+        "connection": {},
+        "api": { "name": "shared_commondataserviceforapps" }
+      },
+      "shared_office365": {
+        "runtimeSource": "invoker",
+        "connection": {},
+        "api": { "name": "shared_office365" }
+      }
+    }
+  }
+}
