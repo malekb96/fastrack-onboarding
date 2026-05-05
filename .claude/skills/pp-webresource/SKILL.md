@@ -234,3 +234,10 @@ After deploying, register events on the form in Power Apps maker:
 | Ribbon command | `KT.DocumentForm.requestManualAiAudit` |
 
 Pass execution context: check "Pass execution context as first parameter" for all events except ribbon commands.
+
+## Known pitfalls
+
+See `learnings/pitfalls.md` — relevant sections:
+- **Guard every `getControl` / `getAttribute` call** — controls may not exist on all form views; always null-check
+- **Clear notifications before setting them** — stale notifications persist; always call `clearFormNotification` first
+- **Hardcoded secrets in committed files** — never put CLIENT_SECRET or tokens in JS files

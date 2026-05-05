@@ -215,3 +215,11 @@ Update-DvFlow -FlowId "FLOW-GUID-HERE" -FlowDefinition $flowDef
 
 Save the JSON to `flows/` in the repo, commit, and update the flow ID table in `CLAUDE.md`.
 The user must authorize connections in Power Automate maker portal (Solutions → FastTrackOnboarding → Cloud Flows).
+
+## Known pitfalls
+
+See `learnings/pitfalls.md` — relevant sections:
+- **SPN tokens rejected by `api.flow.microsoft.com`** — always use Dataverse `workflows` entity
+- **Flows owned by SPN not visible in "My flows"** — access via Solutions → FastTrackOnboarding → Cloud Flows
+- **Flow JSON encoding issue when reading from file** — build definitions as PowerShell hashtables, not file reads
+- **`runAfter` omitted** — actions run in parallel and race condition on record updates; always chain explicitly

@@ -230,3 +230,11 @@ var oldStatus = preImage.GetAttributeValue<OptionSetValue>("clinical_processings
 ## After deployment
 
 Save steps.json and the assembly GUID to CLAUDE.md so future sessions can update rather than re-register.
+
+## Known pitfalls
+
+See `learnings/pitfalls.md` — relevant sections:
+- **Always inherit `PluginBase`** — direct `IPlugin` implementations miss tracing and exception wrapping
+- **Use `context.UserId` for org service** — `null` gives system-level access that bypasses security roles
+- **Stage 20 for validation/defaults, Stage 40 for side-effects** — mixing them causes unpredictable behavior
+- **`net462` target required** — Dataverse plugin registration rejects assemblies targeting other frameworks

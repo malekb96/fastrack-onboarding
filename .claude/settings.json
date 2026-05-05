@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NonInteractive -Command \"$ts = Get-Date -Format 'yyyy-MM-dd HH:mm'; $msg = \\\"`n---`n## Session checkpoint — $ts`nReview this session for new pitfalls or patterns before closing.`n- [ ] New error encountered and fixed? → learnings/pitfalls.md`n- [ ] Better pattern discovered? → learnings/patterns.md`n- [ ] User made a correction? → memory/ + skill`n- [ ] New IDs / choice values created? → CLAUDE.md`n\\\"; Add-Content -Path '.claude/pending-learnings.md' -Value $msg\""
+          }
+        ]
+      }
+    ]
+  }
+}

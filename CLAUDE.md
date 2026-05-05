@@ -126,3 +126,30 @@ The prompt always returns a structured JSON with sections: `processing_metadata`
 
 `malekb96/fastrack-onboarding` — push via `git push origin master`.
 gh CLI is authenticated as `malekb96`.
+
+## Auto-Learning Protocol
+
+This repo uses a recursive self-improvement system. Every Claude session is expected to feed discoveries back into the knowledge base.
+
+### At the start of any non-trivial session
+1. Check `.claude/pending-learnings.md` — process any unchecked items from prior sessions.
+2. Glance at `learnings/pitfalls.md` for entries relevant to the current task.
+
+### During a session — write learnings immediately when you:
+- Hit an error and fix it → `learnings/pitfalls.md`
+- Find a pattern that works better than the current skill instructions → `learnings/patterns.md`
+- Receive a user correction → `memory/feedback_*.md` (and update the skill if applicable)
+- Create a new table, flow, or choice field with IDs → this file (`CLAUDE.md`)
+
+### Use `/learn` or the **auto-learn** skill to capture any learning.
+
+### Never hardcode secrets — always use `$env:PP_CLIENT_SECRET` (and the other `PP_*` env vars).
+
+### Skills available (`.claude/skills/`)
+| Skill | Trigger |
+|---|---|
+| `pp-table` | Create Dataverse table / add columns |
+| `pp-flow` | Create or update a Power Automate flow |
+| `pp-webresource` | Create JS or HTML web resource |
+| `pp-plugin` | Scaffold and register a C# Dataverse plugin |
+| `auto-learn` | Persist any new pitfall, pattern, or correction |

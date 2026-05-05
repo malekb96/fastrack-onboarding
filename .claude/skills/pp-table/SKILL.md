@@ -81,3 +81,10 @@ Options are assigned values starting at `100000000` in declaration order. Docume
 - All tables are automatically added to the `FastTrackOnboarding` solution.
 - The `New-DvTable` function reads `OData-EntityId` from the response header — do not use `Invoke-RestMethod` for table creation (it discards headers); use `Invoke-WebRequest`.
 - After creation, verify with: `GET /api/data/v9.2/EntityDefinitions(LogicalName='...')?$select=LogicalName,MetadataId`
+
+## Known pitfalls
+
+See `learnings/pitfalls.md` — relevant sections:
+- **`Invoke-RestMethod` drops response headers** — always use `Invoke-WebRequest` for table creation
+- **Primary attribute requires `IsPrimaryName = $true`** — always use `New-PrimaryAttr`, never `New-StrAttr` for the primary name
+- **Choice field values start at 100000000** — document in CLAUDE.md after creation
