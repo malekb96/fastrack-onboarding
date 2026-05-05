@@ -1,10 +1,10 @@
 # PowerPlatform.psm1 — Shared helpers for Dataverse API operations
 # Usage: Import-Module .\tools\PowerPlatform.psm1
 
-$script:ClientId     = $env:PP_CLIENT_ID     ?? "506c2f0b-4f76-4324-9c34-31065135a2ab"
-$script:ClientSecret = $env:PP_CLIENT_SECRET ?? "<set PP_CLIENT_SECRET env var>"
-$script:TenantId     = $env:PP_TENANT_ID     ?? "ae481188-942a-44a5-9019-ae83fc025ac3"
-$script:OrgUrl       = $env:PP_ORG_URL       ?? "https://orgebcd0239.crm3.dynamics.com"
+$script:ClientId     = if ($env:PP_CLIENT_ID)     { $env:PP_CLIENT_ID }     else { "506c2f0b-4f76-4324-9c34-31065135a2ab" }
+$script:ClientSecret = if ($env:PP_CLIENT_SECRET) { $env:PP_CLIENT_SECRET } else { "" }
+$script:TenantId     = if ($env:PP_TENANT_ID)     { $env:PP_TENANT_ID }     else { "ae481188-942a-44a5-9019-ae83fc025ac3" }
+$script:OrgUrl       = if ($env:PP_ORG_URL)       { $env:PP_ORG_URL }       else { "https://orgebcd0239.crm3.dynamics.com" }
 $script:SolutionName = "FastTrackOnboarding"
 $script:Base         = "$script:OrgUrl/api/data/v9.2"
 

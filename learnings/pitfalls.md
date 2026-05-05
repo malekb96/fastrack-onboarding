@@ -62,13 +62,13 @@ Each entry follows: **Symptom → Root cause → Fix → Files updated**.
 - **Fix**: Either (a) put function definitions **and** their usage in ONE single command block, or (b) start every block with `Import-Module .\tools\PowerPlatform.psm1`.
 
 ### `??` null-coalescing operator not available in Windows PowerShell 5.1
-- **Symptom**: `ParserError: Unexpected token '??'`.
+- **Symptom**: `ParserError: Unexpected token '??'` — module fails to import entirely.
 - **Root cause**: `??` requires PowerShell 7+. The environment runs Windows PowerShell 5.1.
-- **Fix**: Use `if/else` or the `-ne $null` pattern:
+- **Fix**: Use `if/else` — the only safe pattern in PS 5.1:
   ```powershell
-  $x = if ($null -ne $env:MY_VAR) { $env:MY_VAR } else { "default" }
+  $x = if ($env:MY_VAR) { $env:MY_VAR } else { "default" }
   ```
-- **Status**: `PowerPlatform.psm1` uses this pattern throughout.
+- **Status**: Fixed in `tools/PowerPlatform.psm1` lines 4–7. Never use `??` in this repo.
 
 ### Flow JSON encoding issue when reading from file
 - **Symptom**: `Exception: Stream was not readable` when piping file content through ConvertFrom-Json → ConvertTo-Json → REST call.
