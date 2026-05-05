@@ -1,5 +1,17 @@
 # Proven Patterns & Best Practices
 
+## PAC CLI
+
+### Auth profile configuré (SPN FastTrackSPN)
+PAC CLI v2.7.4 est installé et authentifié :
+```powershell
+pac auth select --name FastTrackSPN
+pac solution list
+pac plugin push --publisher-name clinical --publisher-prefix clinical
+```
+Installer via winget : `winget install Microsoft.PowerAppsCLI` (ID exact, pas `PowerPlatformCLI`).
+Après install, toujours faire `pac install latest` pour avoir la dernière version.
+
 Patterns that have been validated in this project. Use these as defaults.
 
 ---
