@@ -1,0 +1,12 @@
+[
+  {
+    "PluginTypeName":    "KT.FastTrack.MyEntityPlugin",
+    "MessageName":       "Create",
+    "EntityLogicalName": "clinical_myentity",
+    "Stage":             20,
+    "Mode":              0,
+    "Rank":              1,
+    "FilterAttributes":  "",
+    "Description":       "Describe what this step does"
+  }
+]

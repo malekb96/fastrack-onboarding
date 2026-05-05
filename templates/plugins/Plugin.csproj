@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net462</TargetFramework>
+    <AssemblyName>KT.FastTrack.MyPlugin</AssemblyName>
+    <RootNamespace>KT.FastTrack</RootNamespace>
+    <Optimize>true</Optimize>
+    <SignAssembly>false</SignAssembly>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CrmSdk.CoreAssemblies" Version="9.0.2.52" />
+  </ItemGroup>
+</Project>
