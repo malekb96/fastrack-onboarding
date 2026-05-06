@@ -125,6 +125,23 @@ Each entry follows: **Symptom → Root cause → Fix → Files updated**.
 ### Dataverse connector: `GetRecord` is not a valid operation
 - **Symptom**: `WorkflowOperationInputsApiOperationNotFound: The API operation 'GetRecord' could not be found in API 'commondataserviceforapps'`
 - **Fix**: Use `GetItem` for retrieving a single record by ID. Other valid ops: `ListRecords`, `CreateRecord`, `UpdateRecord`, `DeleteRecord`.
+- **Source**: [Microsoft Learn — Dataverse connector reference](https://learn.microsoft.com/en-us/connectors/commondataserviceforapps/)
+
+### `@odata.bind` parameter "not found" usually means the LOOKUP DOESN'T EXIST
+- **Symptom**: `WorkflowOperationParametersExtraParameter: The API operation does not contain a definition for parameter 'item/clinical_xxxid@odata.bind'`
+- **Root cause**: This error is misleading — it actually means the **lookup attribute `clinical_xxxid` does not exist on the target entity**. The connector dynamically generates valid parameters from the entity schema; if the lookup isn't there, the parameter "doesn't exist".
+- **Diagnosis**: Query the entity's lookup attributes:
+  ```powershell
+  GET /api/data/v9.2/EntityDefinitions(LogicalName='clinical_followuptask')/Attributes/Microsoft.Dynamics.CRM.LookupAttributeMetadata?$select=LogicalName,SchemaName
+  ```
+- **Fix**: Create the missing lookup with `Add-DvLookup` BEFORE deploying any flow that references it. The lookup creation defines BOTH the attribute AND the navigation property the connector exposes.
+
+### Lookup navigation property name = lookup attribute logical name (when created via Add-DvLookup)
+- **Pattern**: When `Add-DvLookup` creates a lookup with `LookupSchemaName = "clinical_documentsubmissionid"`, the resulting navigation property name is also `clinical_documentsubmissionid` (lowercase, same as logical name). So `@odata.bind` syntax works as `item/clinical_documentsubmissionid@odata.bind`.
+- **Verify with**:
+  ```powershell
+  GET /EntityDefinitions(LogicalName='<table>')/ManyToOneRelationships?$select=ReferencingEntityNavigationPropertyName,ReferencingAttribute
+  ```
 
 ### `connectionReferenceLogicalName` requires existing Dataverse connectionreferences record
 - **Pattern**: To use connection references in a flow, the `connectionreferences` entity must have a record with the right `connectorid` and a non-empty `connectionid` BEFORE the flow can reference it via `connection: { connectionReferenceLogicalName: "<name>" }`.
