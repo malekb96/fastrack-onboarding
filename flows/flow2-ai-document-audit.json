@@ -71,7 +71,7 @@
               "apiId": "/providers/Microsoft.PowerApps/apis/shared_aibuilder"
             },
             "parameters": {
-              "promptId": "REPLACE_WITH_FAST_TRACK_ONBOARDING_DOCUMENT_AUDIT_PROMPT_ID",
+              "promptId": "43661eeb-0417-45a5-9ac9-a26307b9b31b",
               "promptParameterValues": [
                 {
                   "key": "Document input",

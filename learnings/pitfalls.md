@@ -93,7 +93,47 @@ Each entry follows: **Symptom → Root cause → Fix → Files updated**.
 
 ## AI Builder
 
-### `REPLACE_WITH_FAST_TRACK_ONBOARDING_DOCUMENT_AUDIT_PROMPT_ID` placeholder
-- **Pattern**: The AI Builder prompt ID cannot be obtained programmatically via SPN. Must be retrieved from the maker portal after manually authorizing the AI Builder connection.
-- **Location**: `flows/flow2-ai-document-audit.json` → `Call_AI_Builder.inputs.parameters.promptId`
-- **Fix**: After authorizing connections in the maker portal, find the prompt ID under AI Builder → Prompts, then patch the flow JSON.
+### Prompt ID retrieval via Dataverse
+- **Pattern**: AI Builder prompts are stored in `msdyn_aimodels` entity. Query with SPN token:
+  ```powershell
+  GET /api/data/v9.2/msdyn_aimodels?$filter=contains(msdyn_name,'PROMPT')&$select=msdyn_aimodelid,msdyn_name
+  ```
+- **Current prompt**: `43661eeb-0417-45a5-9ac9-a26307b9b31b` = `PROMPT — FAST TRACK ONBOARDING DOCUMENT AUDIT`
+
+## Power Platform Connection Limitations (CRITICAL)
+
+### SPN cannot use OAuth connections owned by users
+- **Symptom**: `ConnectionAuthorizationFailed: The caller [SPN object id] cannot be used to activate this flow... Either replace the connection... or have the connection owner activate the flow, so the connection is shared with you in the context of this flow.`
+- **Root cause**: SPNs do not get implicit access to user-owned OAuth connections (Office 365, AI Builder, etc). This is a platform security feature, not a bug.
+- **Fix**: Either (a) the user shares each connection with the SPN as "Can use" via Power Automate → Data → Connections → ... → Share, or (b) the user opens each flow in the portal and saves it once (the platform then associates the user's connection in the flow context).
+
+### OAuth connections cannot be created via API
+- **Symptom**: `405 Method Not Allowed` or `404 Not Found` when POST/PUT to `https://canada.api.powerapps.com/providers/Microsoft.PowerApps/connections`
+- **Root cause**: OAuth connectors (Office 365, AI Builder) require browser-based consent flow that cannot be executed programmatically.
+- **Fix**: User must create connections manually in **Power Automate → Data → Connections → + New connection**.
+
+### Flow ownership transfer is blocked when flow definition has invalid connection refs
+- **Symptom**: `BadRequest` on simple `PATCH ownerid@odata.bind` because validation runs on existing clientdata.
+- **Root cause**: ANY workflow PATCH triggers full flow definition re-validation. If existing `connectionReferences.<key>.connection = {}` is empty, validation fails before ownership transfer can happen.
+- **Fix**: PATCH ownerid AND clientdata in the same request, with corrected connection references in the new clientdata.
+
+### Patching flow owned by SPN as user fails with MissingUserDetails
+- **Symptom**: `BapListServicePlansFailed: The user details for tenant id ... and principal id <SPN id> doesn't exist.`
+- **Root cause**: When a user token PATCHes a workflow owned by an SPN, the platform tries to verify the SPN's PA service plan and fails (SPN has no PA license).
+- **Fix**: Transfer ownership to a licensed user before patching, OR use SPN token but only after sharing the connections with SPN.
+
+### Dataverse connector: `GetRecord` is not a valid operation
+- **Symptom**: `WorkflowOperationInputsApiOperationNotFound: The API operation 'GetRecord' could not be found in API 'commondataserviceforapps'`
+- **Fix**: Use `GetItem` for retrieving a single record by ID. Other valid ops: `ListRecords`, `CreateRecord`, `UpdateRecord`, `DeleteRecord`.
+
+### `connectionReferenceLogicalName` requires existing Dataverse connectionreferences record
+- **Pattern**: To use connection references in a flow, the `connectionreferences` entity must have a record with the right `connectorid` and a non-empty `connectionid` BEFORE the flow can reference it via `connection: { connectionReferenceLogicalName: "<name>" }`.
+- **Useful**: Query existing refs first:
+  ```
+  GET /connectionreferences?$select=connectionreferencelogicalname,connectorid,connectionid
+  ```
+- **Pre-existing in fresh env**: `msdyn_Dataverse` (for `shared_commondataserviceforapps`), `msdyn_ContentConversion`, but `connectionid` is empty until a user token PATCHes them.
+
+### Creating connection references requires user token (not SPN)
+- **Symptom**: `ConnectionAuthorizationFailed` when SPN tries to create or PATCH connectionreferences with a user-owned connectionid.
+- **Fix**: Use device code flow to get user's Dataverse token, then create/patch connection references with that token.

@@ -43,7 +43,7 @@
               "inputs": {
                 "host": {
                   "connectionName": "shared_commondataserviceforapps",
-                  "operationId": "GetRecord",
+                  "operationId": "GetItem",
                   "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
                 },
                 "parameters": {
@@ -60,7 +60,7 @@
               "inputs": {
                 "host": {
                   "connectionName": "shared_commondataserviceforapps",
-                  "operationId": "GetRecord",
+                  "operationId": "GetItem",
                   "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
                 },
                 "parameters": {
